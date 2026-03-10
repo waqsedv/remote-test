@@ -1,0 +1,47 @@
+{
+  "name": "fastfood-agent",
+  "version": "1.0.0",
+  "description": "Agent de contrôle à distance pour bornes FastFood",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win --x64",
+    "build:win:portable": "electron-builder --win portable --x64"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.7.2"
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.votresociete.fastfood-agent",
+    "productName": "FastFood Agent",
+    "copyright": "© 2025 VotreSociete",
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "assets/icon.ico",
+      "requestedExecutionLevel": "requireAdministrator"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "runAfterFinish": true
+    },
+    "files": [
+      "main.js",
+      "input-simulator.js",
+      "config.js",
+      "renderer/**",
+      "assets/**"
+    ],
+    "extraResources": [],
+    "asar": true
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "fastfood-remote-server",
+  "version": "1.0.0",
+  "description": "Serveur de signalisation WebRTC pour contrôle borne FastFood",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}

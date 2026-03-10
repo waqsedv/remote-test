@@ -1,0 +1,40 @@
+{
+  "name": "fastfood-controller",
+  "version": "1.0.0",
+  "description": "Interface de contrôle à distance pour bornes FastFood",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win --x64",
+    "build:all": "electron-builder --mac --win --x64"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.7.2"
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.votresociete.fastfood-controller",
+    "productName": "FastFood Remote",
+    "copyright": "© 2025 VotreSociete",
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.utilities"
+    },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "assets/icon.ico"
+    },
+    "files": [
+      "main.js",
+      "config.js",
+      "renderer/**",
+      "assets/**"
+    ],
+    "asar": true
+  }
+}

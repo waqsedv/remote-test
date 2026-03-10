@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' http: ws: blob:; media-src *; img-src *;">
+  <title>FastFood Remote — Contrôleur</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0a0c14;
+      color: #e2e8f0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* ── Barre de titre ── */
+    .titlebar {
+      -webkit-app-region: drag;
+      height: 38px;
+      background: #12152a;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      border-bottom: 1px solid #1e2340;
+      flex-shrink: 0;
+      z-index: 100;
+    }
+    .titlebar-left  { display: flex; align-items: center; gap: 8px; }
+    .titlebar-title { font-size: 13px; font-weight: 600; color: #8892b0; }
+    .titlebar-controls { -webkit-app-region: no-drag; display: flex; gap: 4px; }
+    .titlebar-btn {
+      width: 30px; height: 30px; border-radius: 7px; border: none;
+      background: transparent; color: #4a5568; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; transition: all 0.15s;
+    }
+    .titlebar-btn:hover        { background: #1e2340; color: #e2e8f0; }
+    .titlebar-btn.close:hover  { background: #e53e3e; color: white; }
+    .titlebar-status {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; color: #4a5568;
+    }
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #4a5568; transition: all 0.3s;
+    }
+    .status-dot.connecting { background: #ecc94b; animation: pulse 1s infinite; }
+    .status-dot.connected  { background: #48bb78; box-shadow: 0 0 6px #48bb7866; }
+    .status-dot.error      { background: #fc4a4a; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* ── Layout principal ── */
+    .layout {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ── Panneau latéral ── */
+    .sidebar {
+      width: 260px;
+      background: #12152a;
+      border-right: 1px solid #1e2340;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow-y: auto;
+    }
+
+    .sidebar-section {
+      padding: 16px;
+      border-bottom: 1px solid #1e2340;
+    }
+
+    .section-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: #4a5568;
+      margin-bottom: 12px;
+      font-weight: 600;
+    }
+
+    /* Formulaire de connexion */
+    .connect-form { display: flex; flex-direction: column; gap: 10px; }
+
+    .input-group { display: flex; flex-direction: column; gap: 6px; }
+    .input-label { font-size: 11px; color: #718096; }
+
+    .input-field {
+      background: #1a1d2e;
+      border: 1px solid #2d3454;
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: #e2e8f0;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 6px;
+      font-family: 'SF Mono', 'Cascadia Code', monospace;
+      text-align: center;
+      width: 100%;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .input-field:focus { border-color: #6c63ff; }
+    .input-field::placeholder { color: #2d3454; letter-spacing: 3px; }
+
+    .btn-connect {
+      background: linear-gradient(135deg, #6c63ff, #a78bfa);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 11px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      width: 100%;
+    }
+    .btn-connect:hover    { opacity: 0.9; }
+    .btn-connect:active   { transform: scale(0.98); }
+    .btn-connect:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-disconnect {
+      background: #2d1f1f;
+      color: #fc4a4a;
+      border: 1px solid #fc4a4a33;
+      border-radius: 8px;
+      padding: 11px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      width: 100%;
+    }
+    .btn-disconnect:hover { background: #3d1f1f; }
+
+    /* Info session */
+    .info-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+    }
+    .info-key   { color: #4a5568; }
+    .info-value { color: #a0aec0; font-family: monospace; }
+    .info-value.good { color: #48bb78; }
+    .info-value.bad  { color: #fc4a4a; }
+
+    /* Indicateur de qualité */
+    .quality-bar {
+      height: 4px;
+      background: #1e2340;
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .quality-fill {
+      height: 100%;
+      border-radius: 2px;
+      background: #48bb78;
+      transition: width 0.5s, background 0.5s;
+    }
+
+    /* Log */
+    .log-box {
+      flex: 1;
+      padding: 12px;
+      overflow-y: auto;
+    }
+    .log-entry {
+      font-size: 10.5px;
+      font-family: 'SF Mono', monospace;
+      color: #4a5568;
+      line-height: 1.8;
+      border-bottom: 1px solid #1a1d2e;
+      padding: 2px 0;
+    }
+    .log-entry.info  { color: #718096; }
+    .log-entry.ok    { color: #48bb78; }
+    .log-entry.warn  { color: #ecc94b; }
+    .log-entry.error { color: #fc4a4a; }
+
+    /* ── Zone vidéo ── */
+    .viewer {
+      flex: 1;
+      background: #070810;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .viewer-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      color: #2d3454;
+    }
+    .placeholder-icon { font-size: 64px; opacity: 0.4; }
+    .placeholder-text { font-size: 16px; }
+    .placeholder-sub  { font-size: 12px; color: #1e2340; }
+
+    #remoteVideo {
+      max-width: 100%;
+      max-height: 100%;
+      display: none;
+      cursor: none; /* On gère notre propre curseur */
+      outline: none;
+    }
+    #remoteVideo.visible { display: block; }
+
+    /* Curseur custom */
+    .remote-cursor {
+      position: absolute;
+      width: 16px; height: 16px;
+      border: 2px solid #6c63ff;
+      border-radius: 50%;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      display: none;
+      z-index: 10;
+      box-shadow: 0 0 6px #6c63ff66;
+    }
+
+    /* Overlay de chargement */
+    .viewer-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(7, 8, 16, 0.85);
+      backdrop-filter: blur(4px);
+      flex-direction: column;
+      gap: 14px;
+      z-index: 20;
+    }
+    .viewer-overlay.visible { display: flex; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid #1e2340;
+      border-top-color: #6c63ff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .overlay-text { font-size: 14px; color: #8892b0; }
+
+    /* Barre d'outils en bas du viewer */
+    .toolbar {
+      position: absolute;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(18, 21, 42, 0.9);
+      border: 1px solid #1e2340;
+      border-radius: 12px;
+      padding: 8px 16px;
+      display: none;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      color: #718096;
+      backdrop-filter: blur(8px);
+      z-index: 10;
+    }
+    .toolbar.visible { display: flex; }
+    .toolbar-item { display: flex; align-items: center; gap: 5px; }
+    .toolbar-sep { width: 1px; height: 16px; background: #1e2340; }
+    .kbd {
+      background: #1e2340;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-family: monospace;
+      font-size: 10px;
+      color: #a0aec0;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2d3454; border-radius: 2px; }
+  </style>
+</head>
+<body>
+
+  <!-- ── Barre de titre ── -->
+  <div class="titlebar">
+    <div class="titlebar-left">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+        <rect width="24" height="24" rx="6" fill="#6c63ff"/>
+        <rect x="5" y="6" width="14" height="2" rx="1" fill="white"/>
+        <rect x="5" y="11" width="10" height="2" rx="1" fill="white"/>
+        <rect x="5" y="16" width="7"  height="2" rx="1" fill="white"/>
+      </svg>
+      <span class="titlebar-title">FastFood Remote</span>
+    </div>
+
+    <div class="titlebar-status">
+      <div class="status-dot" id="tlStatusDot"></div>
+      <span id="tlStatusText">Non connecté</span>
+    </div>
+
+    <div class="titlebar-controls">
+      <button class="titlebar-btn" onclick="minimize()" title="Réduire">─</button>
+      <button class="titlebar-btn" onclick="maximize()" title="Plein écran">⬜</button>
+      <button class="titlebar-btn close" onclick="quit()" title="Fermer">✕</button>
+    </div>
+  </div>
+
+  <!-- ── Layout ── -->
+  <div class="layout">
+
+    <!-- Panneau latéral -->
+    <div class="sidebar">
+
+      <!-- Connexion -->
+      <div class="sidebar-section">
+        <div class="section-title">Se connecter à une borne</div>
+        <div class="connect-form" id="connectForm">
+          <div class="input-group">
+            <span class="input-label">Code de la borne</span>
+            <input
+              class="input-field"
+              id="sessionInput"
+              type="text"
+              maxlength="6"
+              placeholder="------"
+              inputmode="numeric"
+            />
+          </div>
+          <button class="btn-connect" id="btnConnect" onclick="connectToSession()">
+            Se connecter
+          </button>
+        </div>
+        <div id="disconnectArea" style="display:none">
+          <button class="btn-disconnect" onclick="disconnect()">⏏ Déconnecter</button>
+        </div>
+      </div>
+
+      <!-- Infos session -->
+      <div class="sidebar-section" id="sessionInfo" style="display:none">
+        <div class="section-title">Session active</div>
+        <div class="info-grid">
+          <div class="info-row">
+            <span class="info-key">Code</span>
+            <span class="info-value" id="infoCode">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">WebRTC</span>
+            <span class="info-value" id="infoWebrtc">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Résolution</span>
+            <span class="info-value" id="infoRes">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">FPS</span>
+            <span class="info-value" id="infoFps">—</span>
+          </div>
+        </div>
+        <div class="quality-bar">
+          <div class="quality-fill" id="qualityFill" style="width:0%"></div>
+        </div>
+      </div>
+
+      <!-- Log -->
+      <div class="sidebar-section" style="flex:1; overflow:hidden; display:flex; flex-direction:column; padding-bottom:0">
+        <div class="section-title">Activité</div>
+      </div>
+      <div class="log-box" id="logBox">
+        <div class="log-entry info">Prêt à se connecter...</div>
+      </div>
+
+    </div>
+
+    <!-- Zone vidéo -->
+    <div class="viewer" id="viewerArea">
+      <div class="viewer-placeholder" id="placeholder">
+        <div class="placeholder-icon">🖥️</div>
+        <div class="placeholder-text">Aucune borne connectée</div>
+        <div class="placeholder-sub">Entrez le code de la borne et cliquez sur Se connecter</div>
+      </div>
+
+      <video id="remoteVideo" autoplay playsinline tabindex="0"></video>
+      <div class="remote-cursor" id="remoteCursor"></div>
+
+      <div class="viewer-overlay" id="viewerOverlay">
+        <div class="spinner"></div>
+        <div class="overlay-text" id="overlayText">Connexion en cours...</div>
+      </div>
+
+      <div class="toolbar" id="toolbar">
+        <div class="toolbar-item">🖱️ Souris active</div>
+        <div class="toolbar-sep"></div>
+        <div class="toolbar-item">⌨️ Clavier actif</div>
+        <div class="toolbar-sep"></div>
+        <div class="toolbar-item"><span class="kbd">Esc</span> Libérer focus</div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
