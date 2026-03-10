@@ -1,0 +1,51 @@
+name: Build Agent Windows .exe
+
+on:
+  push:
+    tags:
+      - 'v*'        # Se déclenche sur : git tag v1.0 && git push --tags
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    name: Build FastFood Agent (.exe)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: agent
+        run: npm install
+
+      - name: Build .exe
+        working-directory: agent
+        run: npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload .exe to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "FastFood Agent ${{ github.ref_name }}"
+          body: |
+            ## FastFood Agent ${{ github.ref_name }}
+
+            ### Installation
+            1. Téléchargez `FastFood-Agent-Setup.exe`
+            2. Lancez l'installateur sur la borne Windows
+            3. L'agent démarrera automatiquement
+
+            ### Utilisation
+            - L'agent affiche un **code à 6 chiffres**
+            - Communiquez ce code à l'opérateur
+            - L'opérateur entre le code dans le Controller pour prendre le contrôle
+          files: |
+            agent/dist/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
