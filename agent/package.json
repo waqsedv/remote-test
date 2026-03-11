@@ -14,7 +14,8 @@
     "build:win:portable": "electron-builder --win portable --x64"
   },
   "dependencies": {
-    "socket.io-client": "^4.7.2"
+    "socket.io-client": "^4.7.2",
+    "sql.js": "^1.14.1"
   },
   "devDependencies": {
     "electron": "^28.3.3",
@@ -26,7 +27,12 @@
     "copyright": "© 2025 VotreSociete",
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "requestedExecutionLevel": "requireAdministrator"
     },
@@ -42,8 +48,11 @@
       "input-simulator.js",
       "config.js",
       "renderer/**",
-      "assets/**"
+      "assets/**",
+      "node_modules/sql.js/dist/sql-wasm.wasm",
+      "node_modules/sql.js/dist/sql-wasm.js"
     ],
+    "asarUnpack": ["**/sql.js/dist/sql-wasm.wasm"],
     "extraResources": [],
     "asar": true
   }

