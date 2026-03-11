@@ -442,6 +442,18 @@ function switchSpTab(tab) {
 window.switchSpTab = switchSpTab;
 
 // ── Commandes macro ──
+let inputBlocked = false;
+
+window.toggleBlockInput = function() {
+  inputBlocked = !inputBlocked;
+  window.sendCommand(inputBlocked ? 'block-input' : 'unblock-input');
+  const label = inputBlocked ? '🟢 Débloquer' : '🔴 Bloquer';
+  const btn = document.getElementById('btnBlockInput');
+  const tbBtn = document.getElementById('toolbarBlockBtn');
+  if (btn) { btn.innerHTML = `<span class="macro-icon">${inputBlocked ? '🟢' : '🔴'}</span> ${inputBlocked ? 'Débloquer souris/clavier' : 'Bloquer souris/clavier'}`; }
+  if (tbBtn) tbBtn.textContent = label;
+};
+
 window.sendCommand = function(cmd) {
   if (!socket?.connected || !activeAgent) return;
   socket.emit('command', { to: activeAgent, cmd });

