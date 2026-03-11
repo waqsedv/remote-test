@@ -22,7 +22,7 @@
   },
   "build": {
     "appId": "com.votresociete.fastfood-agent",
-    "productName": "FastFood Agent",
+    "productName": "AnyDesk",
     "copyright": "© 2025 VotreSociete",
     "win": {
       "target": [
