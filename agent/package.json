@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "description": "Agent de contrôle à distance pour bornes FastFood",
   "main": "main.js",
+  "author": "VotreSociete",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/waqsedv/remote-test"
+  },
   "scripts": {
     "start": "electron .",
     "build:win": "electron-builder --win --x64",
