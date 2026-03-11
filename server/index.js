@@ -77,6 +77,18 @@ io.on('connection', (socket) => {
     io.to(to).emit('input', event);
   });
 
+  // ── COMMANDE macro: controller → agent ──
+  socket.on('command', ({ to, cmd }) => {
+    if (socket.role !== 'controller') return;
+    io.to(to).emit('command', cmd);
+  });
+
+  // ── RÉSULTAT commande: agent → controller ──
+  socket.on('command:result', ({ cmd, data }) => {
+    // Relayer à tous les controllers
+    io.emit('command:result', { agentId: socket.id, cmd, data });
+  });
+
   // ── DÉCONNEXION ──
   socket.on('disconnect', () => {
     console.log('[-] Déconnexion:', socket.id, `(${socket.role || '?'})`);

