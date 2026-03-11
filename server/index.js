@@ -6,86 +6,92 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: { origin: '*' },
-  maxHttpBufferSize: 1e8 // 100MB pour les gros frames
+  maxHttpBufferSize: 1e8
 });
 
-// sessions[sessionId] = { agentId: socketId }
-const sessions = {};
+// agents[socketId] = { id, name, connectedAt }
+const agents = {};
 
-function generateSessionId() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+function getAgentsList() {
+  return Object.values(agents).map(a => ({
+    id: a.id,
+    name: a.name,
+    connectedAt: a.connectedAt
+  }));
 }
 
-app.get('/health', (req, res) => res.json({ status: 'ok', sessions: Object.keys(sessions).length }));
+function broadcastAgentsList() {
+  io.emit('agents:list', getAgentsList());
+}
+
+app.get('/health', (req, res) =>
+  res.json({ status: 'ok', agents: Object.keys(agents).length })
+);
 
 io.on('connection', (socket) => {
   console.log('[+] Connexion:', socket.id);
 
-  // --- AGENT ---
-  socket.on('agent:register', () => {
-    let sessionId = generateSessionId();
-    // Eviter les collisions
-    while (sessions[sessionId]) sessionId = generateSessionId();
-
-    sessions[sessionId] = { agentId: socket.id };
-    socket.sessionId = sessionId;
+  // ── AGENT ──
+  socket.on('agent:register', ({ name } = {}) => {
     socket.role = 'agent';
-    socket.join(sessionId);
-
-    socket.emit('agent:registered', sessionId);
-    console.log(`[Agent] Enregistré: ${sessionId}`);
+    agents[socket.id] = {
+      id: socket.id,
+      name: name || `Agent-${socket.id.slice(-6)}`,
+      connectedAt: Date.now()
+    };
+    socket.emit('agent:registered');
+    broadcastAgentsList();
+    console.log(`[Agent] Enregistré: ${agents[socket.id].name}`);
   });
 
-  // --- CONTROLLER ---
-  socket.on('controller:join', (sessionId) => {
-    const session = sessions[sessionId];
-    if (!session) {
-      socket.emit('join:error', 'Session introuvable. Vérifiez le code.');
+  // ── CONTROLLER ──
+  socket.on('controller:register', () => {
+    socket.role = 'controller';
+    socket.emit('agents:list', getAgentsList());
+    console.log(`[Controller] Enregistré: ${socket.id.slice(-6)}`);
+  });
+
+  // Controller veut se connecter à un agent spécifique
+  socket.on('controller:connect', (agentId) => {
+    if (!agents[agentId]) {
+      socket.emit('connect:error', { agentId, msg: 'Agent non disponible' });
       return;
     }
-
-    socket.sessionId = sessionId;
-    socket.role = 'controller';
-    socket.join(sessionId);
-
-    // Informer l'agent qu'un controller veut se connecter
-    io.to(session.agentId).emit('controller:joined', socket.id);
-    console.log(`[Controller] Rejoint: ${sessionId}`);
+    io.to(agentId).emit('controller:joined', socket.id);
+    console.log(`[Controller] ${socket.id.slice(-6)} → ${agents[agentId].name}`);
   });
 
-  // --- SIGNALISATION WebRTC (relay) ---
+  // Controller se déconnecte d'un agent
+  socket.on('controller:disconnect', (agentId) => {
+    io.to(agentId).emit('controller:left', socket.id);
+  });
+
+  // ── SIGNALISATION WebRTC (relay direct par socket ID) ──
   socket.on('signal', ({ to, signal }) => {
     io.to(to).emit('signal', { from: socket.id, signal });
   });
 
-  // --- ÉVÉNEMENTS INPUT (controller → agent) ---
-  socket.on('input', (event) => {
+  // ── INPUT: controller → agent spécifique ──
+  socket.on('input', ({ to, event }) => {
     if (socket.role !== 'controller') return;
-    const session = sessions[socket.sessionId];
-    if (session) {
-      io.to(session.agentId).emit('input', event);
-    }
+    io.to(to).emit('input', event);
   });
 
-  // --- DÉCONNEXION ---
+  // ── DÉCONNEXION ──
   socket.on('disconnect', () => {
-    console.log('[-] Déconnexion:', socket.id, `(${socket.role || 'inconnu'})`);
-
-    if (socket.role === 'agent' && socket.sessionId) {
-      delete sessions[socket.sessionId];
-      io.to(socket.sessionId).emit('agent:disconnected');
-      console.log(`[Agent] Session fermée: ${socket.sessionId}`);
-    } else if (socket.role === 'controller' && socket.sessionId) {
-      const session = sessions[socket.sessionId];
-      if (session) {
-        io.to(session.agentId).emit('controller:left', socket.id);
-      }
+    console.log('[-] Déconnexion:', socket.id, `(${socket.role || '?'})`);
+    if (socket.role === 'agent') {
+      const name = agents[socket.id]?.name;
+      delete agents[socket.id];
+      broadcastAgentsList();
+      io.emit('agent:offline', socket.id);
+      console.log(`[Agent] Hors ligne: ${name}`);
     }
   });
 });
 
 const PORT = process.env.PORT || 3000;
 httpServer.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n✅ Serveur de signalisation actif sur le port ${PORT}`);
-  console.log(`   Health check: http://localhost:${PORT}/health\n`);
+  console.log(`\n✅ Serveur actif sur le port ${PORT}`);
+  console.log(`   Health: http://localhost:${PORT}/health\n`);
 });

@@ -2,7 +2,7 @@ const { ipcRenderer } = require('electron');
 const io = require('socket.io-client');
 const { SERVER_URL } = require('../config');
 
-// --- Contrôles fenêtre ---
+// ── Contrôles fenêtre ──
 function minimize() { ipcRenderer.send('app-minimize'); }
 function maximize() { ipcRenderer.send('app-maximize'); }
 function quit()     { ipcRenderer.send('app-quit'); }
@@ -10,28 +10,26 @@ window.minimize = minimize;
 window.maximize = maximize;
 window.quit     = quit;
 
-// --- État global ---
+// ── État global ──
 let socket;
-let pc;               // RTCPeerConnection
-let agentId;          // socket.id de l'agent distant
-let connected = false;
-let fpsCounter = 0;
-let lastFpsTime = Date.now();
+const agents    = {};            // agentId → { id, name, connectedAt }
+const sessions  = {};            // agentId → { pc, agentName, state }
+let activeAgent = null;          // agentId de la session active dans le viewer
+let currentView = 'grid';        // 'grid' | 'list'
+let searchQuery = '';
 
-// --- UI helpers ---
+const RTC_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' }
+  ]
+};
+
+// ── Helpers UI ──
 function setTitleStatus(state, text) {
-  document.getElementById('tlStatusDot').className = `status-dot ${state}`;
-  document.getElementById('tlStatusText').textContent = text;
-}
-
-function addLog(msg, type = 'info') {
-  const box = document.getElementById('logBox');
-  const time = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const el = document.createElement('div');
-  el.className = `log-entry ${type}`;
-  el.textContent = `[${time}] ${msg}`;
-  box.appendChild(el);
-  box.scrollTop = box.scrollHeight;
+  document.getElementById('tlDot').className = `status-dot ${state}`;
+  document.getElementById('tlText').textContent = text;
 }
 
 function showOverlay(text) {
@@ -42,100 +40,225 @@ function hideOverlay() {
   document.getElementById('viewerOverlay').classList.remove('visible');
 }
 
-function showVideo() {
-  document.getElementById('placeholder').style.display = 'none';
-  document.getElementById('remoteVideo').classList.add('visible');
-  document.getElementById('toolbar').classList.add('visible');
-  document.getElementById('sessionInfo').style.display = 'block';
-  hideOverlay();
+function timeSince(ts) {
+  const mins = Math.floor((Date.now() - ts) / 60000);
+  if (mins < 1) return 'à l\'instant';
+  if (mins < 60) return `il y a ${mins} min`;
+  return `il y a ${Math.floor(mins / 60)} h`;
 }
 
-function resetVideo() {
-  document.getElementById('placeholder').style.display = 'flex';
-  document.getElementById('remoteVideo').classList.remove('visible');
-  document.getElementById('toolbar').classList.remove('visible');
-  document.getElementById('sessionInfo').style.display = 'none';
-  document.getElementById('remoteVideo').srcObject = null;
-  hideOverlay();
+// ── Pages ──
+function showPage(page) {
+  document.getElementById('pageAppareils').classList.toggle('hidden', page !== 'appareils');
+  document.getElementById('sessionPage').classList.toggle('hidden', page === 'appareils');
+
+  document.getElementById('tabAppareils').classList.toggle('active', page === 'appareils');
+  document.getElementById('viewGrid').style.display = page === 'appareils' ? '' : 'none';
+  document.getElementById('viewList').style.display = page === 'appareils' ? '' : 'none';
 }
+window.showPage = showPage;
 
-function setConnectUI(isConnected) {
-  connected = isConnected;
-  document.getElementById('connectForm').style.display   = isConnected ? 'none'  : 'block';
-  document.getElementById('disconnectArea').style.display = isConnected ? 'block' : 'none';
+function setView(v) {
+  currentView = v;
+  document.getElementById('viewGrid').classList.toggle('active', v === 'grid');
+  document.getElementById('viewList').classList.toggle('active', v === 'list');
+  const grid = document.getElementById('agentsGrid');
+  if (v === 'list') {
+    grid.style.gridTemplateColumns = '1fr';
+  } else {
+    grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(200px, 1fr))';
+  }
 }
+window.setView = setView;
 
-// --- WebRTC config ---
-const RTC_CONFIG = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' }
-  ]
-};
+function filterAgents(q) {
+  searchQuery = q.toLowerCase();
+  renderAgents();
+}
+window.filterAgents = filterAgents;
 
-// --- Connexion à une borne ---
-window.connectToSession = function () {
-  const input = document.getElementById('sessionInput');
-  const code = input.value.trim().replace(/\D/g, '');
+// ── Rendu des agents ──
+function renderAgents() {
+  const grid = document.getElementById('agentsGrid');
+  const empty = document.getElementById('emptyState');
+  const count = document.getElementById('agentsCount');
 
-  if (code.length !== 6) {
-    addLog('Code invalide — 6 chiffres requis', 'warn');
-    input.focus();
+  const list = Object.values(agents).filter(a =>
+    !searchQuery || a.name.toLowerCase().includes(searchQuery)
+  );
+
+  count.textContent = `${list.length} appareil${list.length !== 1 ? 's' : ''} en ligne`;
+
+  if (list.length === 0) {
+    grid.innerHTML = '';
+    grid.style.display = 'none';
+    empty.classList.remove('hidden');
     return;
   }
 
-  if (!socket || !socket.connected) {
-    addLog('Non connecté au serveur', 'error');
+  grid.style.display = '';
+  empty.classList.add('hidden');
+
+  grid.innerHTML = list.map(agent => {
+    const isConnected = !!sessions[agent.id];
+    const state = sessions[agent.id]?.state;
+    return `
+      <div class="agent-card ${isConnected ? 'connected-session' : 'online'}" id="card-${agent.id}">
+        <div class="agent-card-top">
+          <div class="agent-icon">🖥️</div>
+          <div class="agent-online-dot ${isConnected ? 'active' : 'online'}"></div>
+        </div>
+        <div class="agent-name" title="${agent.name}">${agent.name}</div>
+        <div class="agent-sub">${timeSince(agent.connectedAt)}</div>
+        <div class="agent-card-footer">
+          ${isConnected
+            ? `<button class="btn-connect disconnect" onclick="disconnectAgent('${agent.id}')">⏏ Déconnecter</button>`
+            : `<button class="btn-connect connect" onclick="connectAgent('${agent.id}')">Se connecter</button>`
+          }
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── Session tabs dans la barre de nav ──
+function renderSessionTabs() {
+  const container = document.getElementById('sessionTabsContainer');
+  container.innerHTML = Object.entries(sessions).map(([agentId, s]) => {
+    const isActive = agentId === activeAgent;
+    return `
+      <div class="nav-tab ${isActive ? 'active' : ''}" onclick="switchSession('${agentId}')">
+        <span>${s.agentName}</span>
+        <span class="tab-close" onclick="event.stopPropagation(); disconnectAgent('${agentId}')">✕</span>
+      </div>`;
+  }).join('');
+}
+
+// Tabs internes dans le viewer
+function renderInnerSessionTabs() {
+  const bar = document.getElementById('sessionTabsBar');
+  bar.innerHTML = Object.entries(sessions).map(([agentId, s]) => {
+    const isActive = agentId === activeAgent;
+    return `
+      <div class="session-tab ${isActive ? 'active' : ''}" onclick="switchSession('${agentId}')">
+        <div class="stab-dot ${s.state === 'connecting' ? 'connecting' : ''}"></div>
+        <span>${s.agentName}</span>
+        <div class="stab-close" onclick="event.stopPropagation(); disconnectAgent('${agentId}')">✕</div>
+      </div>`;
+  }).join('');
+}
+
+function switchSession(agentId) {
+  activeAgent = agentId;
+  renderSessionTabs();
+  renderInnerSessionTabs();
+
+  const session = sessions[agentId];
+  if (!session) return;
+
+  const video = document.getElementById('remoteVideo');
+  const placeholder = document.getElementById('videoPlaceholder');
+
+  if (session.stream) {
+    video.srcObject = session.stream;
+    video.classList.add('visible');
+    placeholder.style.display = 'none';
+    hideOverlay();
+    document.getElementById('toolbar').classList.add('visible');
+  } else {
+    video.classList.remove('visible');
+    placeholder.style.display = 'flex';
+    showOverlay('Connexion...');
+    document.getElementById('toolbar').classList.remove('visible');
+  }
+
+  showPage('session');
+}
+window.switchSession = switchSession;
+
+// ── Connexion à un agent ──
+window.connectAgent = function(agentId) {
+  if (sessions[agentId]) {
+    switchSession(agentId);
+    return;
+  }
+  if (!socket?.connected) {
+    setTitleStatus('error', 'Serveur non connecté');
     return;
   }
 
-  addLog(`Connexion à la borne ${code}...`);
-  showOverlay('Connexion en cours...');
-  document.getElementById('sessionInput').disabled = true;
-  document.getElementById('btnConnect').disabled = true;
+  const agent = agents[agentId];
+  if (!agent) return;
 
-  socket.emit('controller:join', code);
-  document.getElementById('infoCode').textContent = code;
+  sessions[agentId] = { pc: null, agentName: agent.name, state: 'connecting', stream: null };
+  activeAgent = agentId;
+
+  renderAgents();
+  renderSessionTabs();
+  renderInnerSessionTabs();
+  showPage('session');
+  showOverlay(`Connexion à ${agent.name}...`);
+
+  socket.emit('controller:connect', agentId);
 };
 
-// --- Déconnexion ---
-window.disconnect = function () {
-  if (pc) { pc.close(); pc = null; }
-  agentId = null;
-  setConnectUI(false);
-  setTitleStatus('', 'Non connecté');
-  resetVideo();
-  document.getElementById('sessionInput').disabled = false;
-  document.getElementById('btnConnect').disabled = false;
-  document.getElementById('sessionInput').value = '';
-  addLog('Déconnecté de la borne', 'warn');
-};
+// ── Déconnexion d'un agent ──
+window.disconnectAgent = function(agentId) {
+  if (socket?.connected) {
+    socket.emit('controller:disconnect', agentId);
+  }
 
-// --- Créer la connexion WebRTC (côté controller = answerer) ---
-function createPeerConnection(fromId) {
-  if (pc) { pc.close(); }
+  const session = sessions[agentId];
+  if (session?.pc) { session.pc.close(); }
+  delete sessions[agentId];
 
-  agentId = fromId;
-  pc = new RTCPeerConnection(RTC_CONFIG);
-
-  // Réception du flux vidéo
-  pc.ontrack = (event) => {
-    addLog('Flux vidéo reçu', 'ok');
+  if (activeAgent === agentId) {
+    activeAgent = null;
     const video = document.getElementById('remoteVideo');
-    video.srcObject = event.streams[0];
-    video.onloadedmetadata = () => {
-      showVideo();
-      setConnectUI(true);
-      setTitleStatus('connected', `Connecté — borne ${document.getElementById('sessionInput').value || document.getElementById('infoCode').textContent}`);
-      addLog('Affichage actif', 'ok');
-      updateResolutionInfo(video);
-      startFpsCounter(event.streams[0]);
-    };
-    video.focus();
+    video.srcObject = null;
+    video.classList.remove('visible');
+    document.getElementById('toolbar').classList.remove('visible');
+    hideOverlay();
+
+    const remaining = Object.keys(sessions);
+    if (remaining.length > 0) {
+      switchSession(remaining[0]);
+    } else {
+      showPage('appareils');
+    }
+  }
+
+  renderAgents();
+  renderSessionTabs();
+  renderInnerSessionTabs();
+};
+
+// ── WebRTC: recevoir offre de l'agent ──
+async function handleOffer(agentId, sdp) {
+  const session = sessions[agentId];
+  if (!session) return;
+
+  const pc = new RTCPeerConnection(RTC_CONFIG);
+  session.pc = pc;
+
+  pc.ontrack = (event) => {
+    session.stream = event.streams[0];
+    if (activeAgent === agentId) {
+      const video = document.getElementById('remoteVideo');
+      video.srcObject = session.stream;
+      video.onloadedmetadata = () => {
+        video.classList.add('visible');
+        document.getElementById('videoPlaceholder').style.display = 'none';
+        document.getElementById('toolbar').classList.add('visible');
+        hideOverlay();
+        session.state = 'connected';
+        renderInnerSessionTabs();
+        video.focus();
+      };
+    }
+    session.state = 'connected';
+    renderInnerSessionTabs();
   };
 
-  // Relayer les ICE candidates
   pc.onicecandidate = ({ candidate }) => {
     if (candidate) {
       socket.emit('signal', { to: agentId, signal: { type: 'ice', candidate } });
@@ -144,57 +267,21 @@ function createPeerConnection(fromId) {
 
   pc.onconnectionstatechange = () => {
     const state = pc.connectionState;
-    addLog(`WebRTC: ${state}`);
-
     if (state === 'failed' || state === 'disconnected') {
-      setTitleStatus('error', 'Connexion perdue');
-      addLog('Connexion WebRTC perdue', 'error');
+      if (activeAgent === agentId) {
+        showOverlay('Connexion perdue');
+        document.getElementById('toolbar').classList.remove('visible');
+      }
     }
   };
 
-  pc.oniceconnectionstatechange = () => {
-    document.getElementById('infoWebrtc').textContent = pc.iceConnectionState;
-    document.getElementById('infoWebrtc').className =
-      pc.iceConnectionState === 'connected' ? 'info-value good' : 'info-value';
-  };
+  await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  socket.emit('signal', { to: agentId, signal: { type: 'answer', sdp: answer } });
 }
 
-// --- Afficher résolution ---
-function updateResolutionInfo(video) {
-  const update = () => {
-    if (video.videoWidth) {
-      document.getElementById('infoRes').textContent = `${video.videoWidth}×${video.videoHeight}`;
-    }
-  };
-  update();
-  video.addEventListener('resize', update);
-}
-
-// --- Compteur FPS ---
-function startFpsCounter(stream) {
-  const track = stream.getVideoTracks()[0];
-  if (!track) return;
-
-  setInterval(() => {
-    if (!pc) return;
-    pc.getStats(track).then(stats => {
-      stats.forEach(report => {
-        if (report.type === 'inbound-rtp' && report.kind === 'video') {
-          const fps = Math.round(report.framesPerSecond || 0);
-          document.getElementById('infoFps').textContent = `${fps} fps`;
-
-          // Qualité (0-30fps = 0-100%)
-          const q = Math.min(100, (fps / 30) * 100);
-          const fill = document.getElementById('qualityFill');
-          fill.style.width = `${q}%`;
-          fill.style.background = q > 60 ? '#48bb78' : q > 30 ? '#ecc94b' : '#fc4a4a';
-        }
-      });
-    }).catch(() => {});
-  }, 2000);
-}
-
-// --- Capture et envoi des événements input ---
+// ── Capture input → envoi au bon agent ──
 function setupInputCapture() {
   const video = document.getElementById('remoteVideo');
 
@@ -202,25 +289,22 @@ function setupInputCapture() {
     const rect = video.getBoundingClientRect();
     return {
       x: Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
-      y: Math.max(0, Math.min(1, (e.clientY - rect.top)  / rect.height))
+      y: Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height))
     };
   }
 
   function sendInput(event) {
-    if (!socket || !connected) return;
-    socket.emit('input', event);
+    if (!socket?.connected || !activeAgent) return;
+    socket.emit('input', { to: activeAgent, event });
   }
 
-  // Curseur distant
   const cursor = document.getElementById('remoteCursor');
-
-  // Throttle mousemove (max 30/s)
   let lastMove = 0;
+
   video.addEventListener('mousemove', (e) => {
     const now = Date.now();
-    if (now - lastMove < 33) return; // ~30fps
+    if (now - lastMove < 33) return;
     lastMove = now;
-
     const { x, y } = getRelCoords(e);
     cursor.style.display = 'block';
     cursor.style.left = `${e.clientX - video.getBoundingClientRect().left}px`;
@@ -228,64 +312,20 @@ function setupInputCapture() {
     sendInput({ type: 'mousemove', x, y });
   });
 
-  video.addEventListener('mouseleave', () => {
-    cursor.style.display = 'none';
-  });
-
-  video.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    const { x, y } = getRelCoords(e);
-    sendInput({ type: 'mousedown', x, y, button: e.button });
-  });
-
-  video.addEventListener('mouseup', (e) => {
-    e.preventDefault();
-    const { x, y } = getRelCoords(e);
-    sendInput({ type: 'mouseup', x, y, button: e.button });
-  });
-
-  video.addEventListener('click', (e) => {
-    e.preventDefault();
-    const { x, y } = getRelCoords(e);
-    sendInput({ type: 'click', x, y, button: e.button });
-  });
-
-  video.addEventListener('dblclick', (e) => {
-    e.preventDefault();
-    const { x, y } = getRelCoords(e);
-    sendInput({ type: 'dblclick', x, y });
-  });
-
-  video.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-    const { x, y } = getRelCoords(e);
-    sendInput({ type: 'contextmenu', x, y });
-  });
-
-  video.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    sendInput({ type: 'wheel', deltaY: e.deltaY, deltaX: e.deltaX });
-  }, { passive: false });
-
-  // Clavier — intercepter seulement quand la vidéo a le focus
-  video.addEventListener('keydown', (e) => {
-    e.preventDefault();
-    sendInput({ type: 'keydown', keyCode: e.keyCode, key: e.key });
-  });
-
-  video.addEventListener('keyup', (e) => {
-    e.preventDefault();
-    sendInput({ type: 'keyup', keyCode: e.keyCode, key: e.key });
-  });
-
-  // Clic sur la vidéo = donner le focus
-  video.addEventListener('click', () => video.focus());
+  video.addEventListener('mouseleave', () => { cursor.style.display = 'none'; });
+  video.addEventListener('mousedown',  (e) => { e.preventDefault(); sendInput({ type: 'mousedown',  ...getRelCoords(e), button: e.button }); });
+  video.addEventListener('mouseup',    (e) => { e.preventDefault(); sendInput({ type: 'mouseup',    ...getRelCoords(e), button: e.button }); });
+  video.addEventListener('click',      (e) => { e.preventDefault(); sendInput({ type: 'click',      ...getRelCoords(e), button: e.button }); video.focus(); });
+  video.addEventListener('dblclick',   (e) => { e.preventDefault(); sendInput({ type: 'dblclick',   ...getRelCoords(e) }); });
+  video.addEventListener('contextmenu',(e) => { e.preventDefault(); sendInput({ type: 'contextmenu',...getRelCoords(e) }); });
+  video.addEventListener('wheel',      (e) => { e.preventDefault(); sendInput({ type: 'wheel', deltaY: e.deltaY, deltaX: e.deltaX }); }, { passive: false });
+  video.addEventListener('keydown',    (e) => { e.preventDefault(); sendInput({ type: 'keydown', keyCode: e.keyCode, key: e.key }); });
+  video.addEventListener('keyup',      (e) => { e.preventDefault(); sendInput({ type: 'keyup',   keyCode: e.keyCode, key: e.key }); });
 }
 
-// --- Connexion Socket.io au serveur de signalisation ---
+// ── Socket.io ──
 function connectToServer() {
-  addLog(`Connexion au serveur: ${SERVER_URL}`);
-  setTitleStatus('connecting', 'Connexion serveur...');
+  setTitleStatus('connecting', 'Connexion...');
 
   socket = io(SERVER_URL, {
     reconnectionDelay: 2000,
@@ -294,72 +334,71 @@ function connectToServer() {
   });
 
   socket.on('connect', () => {
-    addLog('Serveur connecté', 'ok');
-    setTitleStatus('', 'Prêt');
+    socket.emit('controller:register');
+    setTitleStatus('connected', 'En ligne');
   });
 
-  // L'agent nous a répondu: "controller:joined" — l'agent va envoyer une offre WebRTC
-  // On attend le signal 'offer' de l'agent
+  // Mise à jour de la liste des agents
+  socket.on('agents:list', (list) => {
+    // Nettoyer les agents hors ligne
+    Object.keys(agents).forEach(id => { if (!list.find(a => a.id === id)) delete agents[id]; });
+    list.forEach(a => { agents[a.id] = a; });
+    renderAgents();
+    document.getElementById('agentsCount').textContent =
+      `${list.length} appareil${list.length !== 1 ? 's' : ''} en ligne`;
+  });
 
-  socket.on('signal', async ({ from, signal }) => {
+  // Agent vient de passer hors ligne
+  socket.on('agent:offline', (agentId) => {
+    delete agents[agentId];
+    if (sessions[agentId]) {
+      window.disconnectAgent(agentId);
+    }
+    renderAgents();
+  });
+
+  // Erreur de connexion à un agent
+  socket.on('connect:error', ({ agentId, msg }) => {
+    delete sessions[agentId];
+    renderAgents();
+    renderSessionTabs();
+    renderInnerSessionTabs();
+    if (Object.keys(sessions).length === 0) showPage('appareils');
+  });
+
+  // Signalisation WebRTC
+  socket.on('signal', async ({ from: agentId, signal }) => {
     if (signal.type === 'offer') {
-      addLog('Offre WebRTC reçue. Connexion...', 'ok');
       showOverlay('Établissement WebRTC...');
-
-      createPeerConnection(from);
-
-      await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-
-      socket.emit('signal', { to: from, signal: { type: 'answer', sdp: answer } });
-      addLog('Réponse WebRTC envoyée');
-
+      try {
+        await handleOffer(agentId, signal.sdp);
+      } catch (err) {
+        showOverlay(`Erreur: ${err.message}`);
+      }
     } else if (signal.type === 'ice' && signal.candidate) {
-      if (pc) {
-        await pc.addIceCandidate(new RTCIceCandidate(signal.candidate)).catch(() => {});
+      const session = sessions[agentId];
+      if (session?.pc) {
+        await session.pc.addIceCandidate(new RTCIceCandidate(signal.candidate)).catch(() => {});
       }
     }
   });
 
-  socket.on('join:error', (msg) => {
-    addLog(`Erreur: ${msg}`, 'error');
-    hideOverlay();
-    document.getElementById('sessionInput').disabled = false;
-    document.getElementById('btnConnect').disabled = false;
-    setTitleStatus('error', msg);
-  });
-
-  socket.on('agent:disconnected', () => {
-    addLog('La borne s\'est déconnectée', 'warn');
-    setTitleStatus('error', 'Borne déconnectée');
-    resetVideo();
-    setConnectUI(false);
-    document.getElementById('sessionInput').disabled = false;
-    document.getElementById('btnConnect').disabled = false;
-    if (pc) { pc.close(); pc = null; }
+  // Agent s'est déconnecté en cours de session
+  socket.on('agent:offline', (agentId) => {
+    if (sessions[agentId]) window.disconnectAgent(agentId);
+    delete agents[agentId];
+    renderAgents();
   });
 
   socket.on('disconnect', () => {
-    addLog('Serveur déconnecté. Reconnexion...', 'warn');
-    setTitleStatus('error', 'Serveur déconnecté');
+    setTitleStatus('error', 'Déconnecté');
+    Object.keys(agents).forEach(id => delete agents[id]);
+    renderAgents();
   });
 
-  socket.on('connect_error', (err) => {
-    addLog(`Serveur inaccessible: ${err.message}`, 'error');
-    setTitleStatus('error', 'Serveur inaccessible');
-  });
+  socket.on('connect_error', () => setTitleStatus('error', 'Serveur inaccessible'));
 }
 
-// --- Filtre numérique sur le champ code ---
-document.getElementById('sessionInput').addEventListener('input', function () {
-  this.value = this.value.replace(/\D/g, '').slice(0, 6);
-});
-
-document.getElementById('sessionInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') window.connectToSession();
-});
-
-// --- Démarrage ---
+// ── Démarrage ──
 setupInputCapture();
 connectToServer();

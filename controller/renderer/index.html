@@ -3,413 +3,497 @@
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' http: ws: blob:; media-src *; img-src *;">
-  <title>FastFood Remote — Contrôleur</title>
+  <title>FastFood Remote</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
+    :root {
+      --bg:        #1c1c1c;
+      --bg2:       #252525;
+      --bg3:       #2e2e2e;
+      --border:    #3a3a3a;
+      --border2:   #444;
+      --text:      #e8e8e8;
+      --text2:     #a0a0a0;
+      --text3:     #606060;
+      --accent:    #e84040;
+      --accent2:   #ff6060;
+      --green:     #4caf82;
+      --yellow:    #f0b429;
+    }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #0a0c14;
-      color: #e2e8f0;
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
       height: 100vh;
       display: flex;
       flex-direction: column;
       overflow: hidden;
       user-select: none;
+      -webkit-font-smoothing: antialiased;
     }
 
-    /* ── Barre de titre ── */
+    /* ══ TITLEBAR ══ */
     .titlebar {
       -webkit-app-region: drag;
-      height: 38px;
-      background: #12152a;
+      height: 36px;
+      background: #141414;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 14px;
-      border-bottom: 1px solid #1e2340;
+      padding: 0 12px;
+      border-bottom: 1px solid #0a0a0a;
       flex-shrink: 0;
-      z-index: 100;
+      z-index: 200;
     }
-    .titlebar-left  { display: flex; align-items: center; gap: 8px; }
-    .titlebar-title { font-size: 13px; font-weight: 600; color: #8892b0; }
-    .titlebar-controls { -webkit-app-region: no-drag; display: flex; gap: 4px; }
-    .titlebar-btn {
-      width: 30px; height: 30px; border-radius: 7px; border: none;
-      background: transparent; color: #4a5568; cursor: pointer;
+    .tb-left { display: flex; align-items: center; gap: 10px; }
+    .tb-logo {
+      width: 20px; height: 20px;
+      background: var(--accent);
+      border-radius: 5px;
       display: flex; align-items: center; justify-content: center;
-      font-size: 14px; transition: all 0.15s;
     }
-    .titlebar-btn:hover        { background: #1e2340; color: #e2e8f0; }
-    .titlebar-btn.close:hover  { background: #e53e3e; color: white; }
-    .titlebar-status {
-      display: flex; align-items: center; gap: 6px;
-      font-size: 12px; color: #4a5568;
-    }
-    .status-dot {
-      width: 7px; height: 7px; border-radius: 50%;
-      background: #4a5568; transition: all 0.3s;
-    }
-    .status-dot.connecting { background: #ecc94b; animation: pulse 1s infinite; }
-    .status-dot.connected  { background: #48bb78; box-shadow: 0 0 6px #48bb7866; }
-    .status-dot.error      { background: #fc4a4a; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .tb-logo svg { width: 12px; height: 12px; }
+    .tb-title { font-size: 13px; font-weight: 600; color: var(--text2); letter-spacing: 0.2px; }
 
-    /* ── Layout principal ── */
-    .layout {
-      flex: 1;
+    .tb-center {
+      -webkit-app-region: no-drag;
       display: flex;
-      overflow: hidden;
-    }
-
-    /* ── Panneau latéral ── */
-    .sidebar {
-      width: 260px;
-      background: #12152a;
-      border-right: 1px solid #1e2340;
-      display: flex;
-      flex-direction: column;
-      flex-shrink: 0;
-      overflow-y: auto;
-    }
-
-    .sidebar-section {
-      padding: 16px;
-      border-bottom: 1px solid #1e2340;
-    }
-
-    .section-title {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 1.2px;
-      color: #4a5568;
-      margin-bottom: 12px;
-      font-weight: 600;
-    }
-
-    /* Formulaire de connexion */
-    .connect-form { display: flex; flex-direction: column; gap: 10px; }
-
-    .input-group { display: flex; flex-direction: column; gap: 6px; }
-    .input-label { font-size: 11px; color: #718096; }
-
-    .input-field {
-      background: #1a1d2e;
-      border: 1px solid #2d3454;
-      border-radius: 8px;
-      padding: 10px 12px;
-      color: #e2e8f0;
-      font-size: 22px;
-      font-weight: 700;
-      letter-spacing: 6px;
-      font-family: 'SF Mono', 'Cascadia Code', monospace;
-      text-align: center;
-      width: 100%;
-      outline: none;
-      transition: border-color 0.15s;
-    }
-    .input-field:focus { border-color: #6c63ff; }
-    .input-field::placeholder { color: #2d3454; letter-spacing: 3px; }
-
-    .btn-connect {
-      background: linear-gradient(135deg, #6c63ff, #a78bfa);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      padding: 11px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.15s, transform 0.1s;
-      width: 100%;
-    }
-    .btn-connect:hover    { opacity: 0.9; }
-    .btn-connect:active   { transform: scale(0.98); }
-    .btn-connect:disabled { opacity: 0.4; cursor: not-allowed; }
-
-    .btn-disconnect {
-      background: #2d1f1f;
-      color: #fc4a4a;
-      border: 1px solid #fc4a4a33;
-      border-radius: 8px;
-      padding: 11px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.15s;
-      width: 100%;
-    }
-    .btn-disconnect:hover { background: #3d1f1f; }
-
-    /* Info session */
-    .info-grid {
-      display: flex;
-      flex-direction: column;
+      align-items: center;
+      background: #0e0e0e;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 0 10px;
+      height: 24px;
       gap: 8px;
+      min-width: 240px;
     }
-    .info-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+    .tb-center input {
+      background: none;
+      border: none;
+      outline: none;
+      color: var(--text2);
       font-size: 12px;
+      width: 100%;
     }
-    .info-key   { color: #4a5568; }
-    .info-value { color: #a0aec0; font-family: monospace; }
-    .info-value.good { color: #48bb78; }
-    .info-value.bad  { color: #fc4a4a; }
+    .tb-center input::placeholder { color: var(--text3); }
+    .tb-center svg { color: var(--text3); flex-shrink: 0; }
 
-    /* Indicateur de qualité */
-    .quality-bar {
-      height: 4px;
-      background: #1e2340;
-      border-radius: 2px;
-      overflow: hidden;
-      margin-top: 6px;
-    }
-    .quality-fill {
-      height: 100%;
-      border-radius: 2px;
-      background: #48bb78;
-      transition: width 0.5s, background 0.5s;
-    }
+    .tb-right { -webkit-app-region: no-drag; display: flex; align-items: center; gap: 2px; }
+    .tb-status { display: flex; align-items: center; gap: 6px; margin-right: 12px; font-size: 11px; color: var(--text3); }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text3); transition: all .3s; }
+    .status-dot.connecting { background: var(--yellow); animation: blink 1s infinite; }
+    .status-dot.connected  { background: var(--green); box-shadow: 0 0 5px var(--green)66; }
+    .status-dot.error      { background: var(--accent); }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-    /* Log */
-    .log-box {
-      flex: 1;
-      padding: 12px;
-      overflow-y: auto;
+    .tb-btn {
+      width: 34px; height: 34px; border: none; background: none;
+      color: var(--text3); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; border-radius: 4px; transition: all .15s;
     }
-    .log-entry {
-      font-size: 10.5px;
-      font-family: 'SF Mono', monospace;
-      color: #4a5568;
-      line-height: 1.8;
-      border-bottom: 1px solid #1a1d2e;
-      padding: 2px 0;
-    }
-    .log-entry.info  { color: #718096; }
-    .log-entry.ok    { color: #48bb78; }
-    .log-entry.warn  { color: #ecc94b; }
-    .log-entry.error { color: #fc4a4a; }
+    .tb-btn:hover { background: #333; color: var(--text); }
+    .tb-btn.close:hover { background: var(--accent); color: white; }
 
-    /* ── Zone vidéo ── */
-    .viewer {
-      flex: 1;
-      background: #070810;
+    /* ══ TABS ══ */
+    .nav-tabs {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
-      justify-content: center;
+      padding: 0 16px;
+      height: 38px;
+      flex-shrink: 0;
+      gap: 0;
+    }
+    .nav-tab {
+      padding: 0 16px;
+      height: 38px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12.5px;
+      color: var(--text3);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all .15s;
+      white-space: nowrap;
+      position: relative;
+    }
+    .nav-tab:hover { color: var(--text2); }
+    .nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 500; }
+    .nav-tab .tab-badge {
+      background: var(--accent);
+      color: white;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 10px;
+      min-width: 16px;
+      text-align: center;
+    }
+    .nav-tab .tab-close {
+      width: 14px; height: 14px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 3px;
+      color: var(--text3);
+      font-size: 10px;
+      transition: all .1s;
+    }
+    .nav-tab .tab-close:hover { background: #ff404040; color: var(--accent2); }
+
+    .nav-spacer { flex: 1; }
+
+    .view-toggle { display: flex; gap: 2px; }
+    .view-btn {
+      width: 26px; height: 26px;
+      border: none; background: none;
+      color: var(--text3); cursor: pointer;
+      border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; transition: all .15s;
+    }
+    .view-btn:hover, .view-btn.active { background: var(--bg3); color: var(--text); }
+
+    /* ══ MAIN ══ */
+    .main { flex: 1; display: flex; overflow: hidden; }
+
+    /* ══ PAGE APPAREILS ══ */
+    .page { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .page.hidden { display: none; }
+
+    .page-header {
+      padding: 14px 20px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .page-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text3); font-weight: 600; }
+
+    .agents-grid {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px 16px 16px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px;
+      align-content: start;
+    }
+
+    /* Agent card */
+    .agent-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      cursor: pointer;
+      transition: all .15s;
       position: relative;
       overflow: hidden;
     }
+    .agent-card:hover { border-color: var(--border2); background: var(--bg3); }
+    .agent-card.online:hover { border-color: #4caf8244; }
+    .agent-card.connected-session { border-color: var(--accent)66; background: #2a1a1a; }
 
-    .viewer-placeholder {
+    .agent-card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .agent-icon {
+      width: 40px; height: 40px;
+      background: var(--bg3);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+    }
+    .agent-online-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--text3);
+      margin-top: 2px;
+    }
+    .agent-online-dot.online { background: var(--green); box-shadow: 0 0 6px var(--green)55; }
+    .agent-online-dot.active { background: var(--accent); box-shadow: 0 0 6px var(--accent)55; }
+
+    .agent-name {
+      font-size: 13px; font-weight: 600; color: var(--text);
+      margin-bottom: 3px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .agent-sub { font-size: 11px; color: var(--text3); }
+
+    .agent-card-footer { margin-top: 12px; }
+    .btn-connect {
+      width: 100%;
+      padding: 7px;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .btn-connect.connect {
+      background: var(--accent);
+      color: white;
+    }
+    .btn-connect.connect:hover { background: var(--accent2); }
+    .btn-connect.disconnect {
+      background: #3a1a1a;
+      color: var(--accent2);
+      border: 1px solid var(--accent)33;
+    }
+    .btn-connect.disconnect:hover { background: #4a1e1e; }
+
+    /* Empty state */
+    .empty-state {
+      flex: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 16px;
-      color: #2d3454;
+      justify-content: center;
+      gap: 12px;
+      color: var(--text3);
+      padding: 40px;
     }
-    .placeholder-icon { font-size: 64px; opacity: 0.4; }
-    .placeholder-text { font-size: 16px; }
-    .placeholder-sub  { font-size: 12px; color: #1e2340; }
+    .empty-icon { font-size: 48px; opacity: .3; }
+    .empty-title { font-size: 15px; font-weight: 500; color: var(--text3); }
+    .empty-sub { font-size: 12px; text-align: center; line-height: 1.6; }
+
+    /* ══ PAGE SESSION (VIEWER) ══ */
+    .session-page {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #0a0a0a;
+    }
+    .session-page.hidden { display: none; }
+
+    /* Session tabs inside viewer */
+    .session-tabs-bar {
+      background: #111;
+      border-bottom: 1px solid #222;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      height: 34px;
+      flex-shrink: 0;
+      gap: 2px;
+      overflow-x: auto;
+    }
+    .session-tab {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 10px;
+      height: 28px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 11.5px;
+      color: var(--text3);
+      white-space: nowrap;
+      transition: all .1s;
+      flex-shrink: 0;
+    }
+    .session-tab:hover { background: #1e1e1e; color: var(--text2); }
+    .session-tab.active { background: #1e1e1e; color: var(--text); }
+    .session-tab .stab-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+    .session-tab .stab-dot.connecting { background: var(--yellow); animation: blink 1s infinite; }
+    .session-tab .stab-close {
+      width: 14px; height: 14px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 3px;
+      font-size: 10px;
+      color: var(--text3);
+      transition: all .1s;
+    }
+    .session-tab .stab-close:hover { background: #ff404040; color: var(--accent); }
+
+    /* Video container */
+    .video-wrapper {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .video-placeholder {
+      display: flex; flex-direction: column;
+      align-items: center; gap: 12px;
+      color: var(--text3);
+    }
+    .video-placeholder-icon { font-size: 56px; opacity: .2; }
+    .video-placeholder-text { font-size: 14px; }
 
     #remoteVideo {
-      max-width: 100%;
-      max-height: 100%;
-      display: none;
-      cursor: none; /* On gère notre propre curseur */
-      outline: none;
+      max-width: 100%; max-height: 100%;
+      display: none; cursor: none; outline: none;
     }
     #remoteVideo.visible { display: block; }
 
-    /* Curseur custom */
     .remote-cursor {
       position: absolute;
-      width: 16px; height: 16px;
-      border: 2px solid #6c63ff;
+      width: 14px; height: 14px;
+      border: 2px solid var(--accent);
       border-radius: 50%;
       pointer-events: none;
       transform: translate(-50%, -50%);
       display: none;
       z-index: 10;
-      box-shadow: 0 0 6px #6c63ff66;
+      box-shadow: 0 0 5px var(--accent)55;
     }
 
-    /* Overlay de chargement */
     .viewer-overlay {
-      position: absolute;
-      inset: 0;
+      position: absolute; inset: 0;
       display: none;
-      align-items: center;
-      justify-content: center;
-      background: rgba(7, 8, 16, 0.85);
+      align-items: center; justify-content: center;
+      background: rgba(0,0,0,.7);
       backdrop-filter: blur(4px);
-      flex-direction: column;
-      gap: 14px;
+      flex-direction: column; gap: 12px;
       z-index: 20;
     }
     .viewer-overlay.visible { display: flex; }
     .spinner {
-      width: 40px; height: 40px;
-      border: 3px solid #1e2340;
-      border-top-color: #6c63ff;
+      width: 36px; height: 36px;
+      border: 3px solid #222;
+      border-top-color: var(--accent);
       border-radius: 50%;
-      animation: spin 0.8s linear infinite;
+      animation: spin .8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .overlay-text { font-size: 14px; color: #8892b0; }
+    .overlay-text { font-size: 13px; color: var(--text2); }
 
-    /* Barre d'outils en bas du viewer */
+    /* Toolbar flottante */
     .toolbar {
-      position: absolute;
-      bottom: 12px;
-      left: 50%;
+      position: absolute; bottom: 12px; left: 50%;
       transform: translateX(-50%);
-      background: rgba(18, 21, 42, 0.9);
-      border: 1px solid #1e2340;
-      border-radius: 12px;
-      padding: 8px 16px;
-      display: none;
-      align-items: center;
-      gap: 12px;
-      font-size: 12px;
-      color: #718096;
+      background: rgba(17,17,17,.92);
+      border: 1px solid #333;
+      border-radius: 10px;
+      padding: 6px 14px;
+      display: none; align-items: center; gap: 10px;
+      font-size: 11px; color: var(--text3);
       backdrop-filter: blur(8px);
       z-index: 10;
+      white-space: nowrap;
     }
     .toolbar.visible { display: flex; }
-    .toolbar-item { display: flex; align-items: center; gap: 5px; }
-    .toolbar-sep { width: 1px; height: 16px; background: #1e2340; }
+    .toolbar-sep { width: 1px; height: 14px; background: #333; }
     .kbd {
-      background: #1e2340;
-      border-radius: 4px;
-      padding: 2px 6px;
-      font-family: monospace;
-      font-size: 10px;
-      color: #a0aec0;
+      background: #222; border-radius: 3px;
+      padding: 2px 5px;
+      font-family: monospace; font-size: 10px; color: var(--text2);
     }
 
     /* Scrollbar */
-    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #2d3454; border-radius: 2px; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--border2); }
   </style>
 </head>
 <body>
 
-  <!-- ── Barre de titre ── -->
+  <!-- ══ TITLEBAR ══ -->
   <div class="titlebar">
-    <div class="titlebar-left">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-        <rect width="24" height="24" rx="6" fill="#6c63ff"/>
-        <rect x="5" y="6" width="14" height="2" rx="1" fill="white"/>
-        <rect x="5" y="11" width="10" height="2" rx="1" fill="white"/>
-        <rect x="5" y="16" width="7"  height="2" rx="1" fill="white"/>
+    <div class="tb-left">
+      <div class="tb-logo">
+        <svg viewBox="0 0 12 12" fill="white"><rect x="1" y="1" width="10" height="2" rx="1"/><rect x="1" y="5" width="7" height="2" rx="1"/><rect x="1" y="9" width="4" height="2" rx="1"/></svg>
+      </div>
+      <span class="tb-title">FastFood Remote</span>
+    </div>
+
+    <div class="tb-center">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
-      <span class="titlebar-title">FastFood Remote</span>
+      <input type="text" placeholder="Rechercher un appareil..." id="searchInput" oninput="filterAgents(this.value)">
     </div>
 
-    <div class="titlebar-status">
-      <div class="status-dot" id="tlStatusDot"></div>
-      <span id="tlStatusText">Non connecté</span>
-    </div>
-
-    <div class="titlebar-controls">
-      <button class="titlebar-btn" onclick="minimize()" title="Réduire">─</button>
-      <button class="titlebar-btn" onclick="maximize()" title="Plein écran">⬜</button>
-      <button class="titlebar-btn close" onclick="quit()" title="Fermer">✕</button>
+    <div class="tb-right">
+      <div class="tb-status">
+        <div class="status-dot" id="tlDot"></div>
+        <span id="tlText">Non connecté</span>
+      </div>
+      <button class="tb-btn" onclick="minimize()" title="Réduire">
+        <svg width="10" height="2" viewBox="0 0 10 2"><line x1="0" y1="1" x2="10" y2="1" stroke="currentColor" stroke-width="1.5"/></svg>
+      </button>
+      <button class="tb-btn" onclick="maximize()" title="Agrandir">
+        <svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+      </button>
+      <button class="tb-btn close" onclick="quit()" title="Fermer">
+        <svg width="10" height="10" viewBox="0 0 10 10"><line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1.5"/></svg>
+      </button>
     </div>
   </div>
 
-  <!-- ── Layout ── -->
-  <div class="layout">
+  <!-- ══ TABS ══ -->
+  <div class="nav-tabs" id="navTabs">
+    <div class="nav-tab active" id="tabAppareils" onclick="showPage('appareils')">
+      Appareils
+    </div>
+    <div id="sessionTabsContainer"></div>
+    <div class="nav-spacer"></div>
+    <div class="view-toggle">
+      <button class="view-btn active" id="viewGrid" onclick="setView('grid')" title="Grille">
+        <svg width="14" height="14" viewBox="0 0 14 14"><rect x="0" y="0" width="6" height="6" rx="1" fill="currentColor"/><rect x="8" y="0" width="6" height="6" rx="1" fill="currentColor"/><rect x="0" y="8" width="6" height="6" rx="1" fill="currentColor"/><rect x="8" y="8" width="6" height="6" rx="1" fill="currentColor"/></svg>
+      </button>
+      <button class="view-btn" id="viewList" onclick="setView('list')" title="Liste">
+        <svg width="14" height="14" viewBox="0 0 14 14"><rect x="0" y="1" width="14" height="2" rx="1" fill="currentColor"/><rect x="0" y="6" width="14" height="2" rx="1" fill="currentColor"/><rect x="0" y="11" width="14" height="2" rx="1" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </div>
 
-    <!-- Panneau latéral -->
-    <div class="sidebar">
+  <!-- ══ MAIN ══ -->
+  <div class="main">
 
-      <!-- Connexion -->
-      <div class="sidebar-section">
-        <div class="section-title">Se connecter à une borne</div>
-        <div class="connect-form" id="connectForm">
-          <div class="input-group">
-            <span class="input-label">Code de la borne</span>
-            <input
-              class="input-field"
-              id="sessionInput"
-              type="text"
-              maxlength="6"
-              placeholder="------"
-              inputmode="numeric"
-            />
-          </div>
-          <button class="btn-connect" id="btnConnect" onclick="connectToSession()">
-            Se connecter
-          </button>
-        </div>
-        <div id="disconnectArea" style="display:none">
-          <button class="btn-disconnect" onclick="disconnect()">⏏ Déconnecter</button>
-        </div>
+    <!-- Page Appareils -->
+    <div class="page" id="pageAppareils">
+      <div class="page-header">
+        <span class="page-title" id="agentsCount">Appareils en ligne</span>
       </div>
-
-      <!-- Infos session -->
-      <div class="sidebar-section" id="sessionInfo" style="display:none">
-        <div class="section-title">Session active</div>
-        <div class="info-grid">
-          <div class="info-row">
-            <span class="info-key">Code</span>
-            <span class="info-value" id="infoCode">—</span>
-          </div>
-          <div class="info-row">
-            <span class="info-key">WebRTC</span>
-            <span class="info-value" id="infoWebrtc">—</span>
-          </div>
-          <div class="info-row">
-            <span class="info-key">Résolution</span>
-            <span class="info-value" id="infoRes">—</span>
-          </div>
-          <div class="info-row">
-            <span class="info-key">FPS</span>
-            <span class="info-value" id="infoFps">—</span>
-          </div>
-        </div>
-        <div class="quality-bar">
-          <div class="quality-fill" id="qualityFill" style="width:0%"></div>
-        </div>
+      <div class="agents-grid" id="agentsGrid">
+        <!-- Cards générées dynamiquement -->
       </div>
-
-      <!-- Log -->
-      <div class="sidebar-section" style="flex:1; overflow:hidden; display:flex; flex-direction:column; padding-bottom:0">
-        <div class="section-title">Activité</div>
+      <div class="empty-state hidden" id="emptyState">
+        <div class="empty-icon">🖥️</div>
+        <div class="empty-title">Aucun appareil en ligne</div>
+        <div class="empty-sub">Les agents apparaîtront ici dès qu'ils se connectent au serveur.</div>
       </div>
-      <div class="log-box" id="logBox">
-        <div class="log-entry info">Prêt à se connecter...</div>
-      </div>
-
     </div>
 
-    <!-- Zone vidéo -->
-    <div class="viewer" id="viewerArea">
-      <div class="viewer-placeholder" id="placeholder">
-        <div class="placeholder-icon">🖥️</div>
-        <div class="placeholder-text">Aucune borne connectée</div>
-        <div class="placeholder-sub">Entrez le code de la borne et cliquez sur Se connecter</div>
+    <!-- Page Session / Viewer -->
+    <div class="session-page hidden" id="sessionPage">
+      <div class="session-tabs-bar" id="sessionTabsBar">
+        <!-- Tabs des sessions actives -->
       </div>
-
-      <video id="remoteVideo" autoplay playsinline tabindex="0"></video>
-      <div class="remote-cursor" id="remoteCursor"></div>
-
-      <div class="viewer-overlay" id="viewerOverlay">
-        <div class="spinner"></div>
-        <div class="overlay-text" id="overlayText">Connexion en cours...</div>
-      </div>
-
-      <div class="toolbar" id="toolbar">
-        <div class="toolbar-item">🖱️ Souris active</div>
-        <div class="toolbar-sep"></div>
-        <div class="toolbar-item">⌨️ Clavier actif</div>
-        <div class="toolbar-sep"></div>
-        <div class="toolbar-item"><span class="kbd">Esc</span> Libérer focus</div>
+      <div class="video-wrapper">
+        <div class="video-placeholder" id="videoPlaceholder">
+          <div class="video-placeholder-icon">🖥️</div>
+          <div class="video-placeholder-text">Connexion en cours...</div>
+        </div>
+        <video id="remoteVideo" autoplay playsinline tabindex="0"></video>
+        <div class="remote-cursor" id="remoteCursor"></div>
+        <div class="viewer-overlay" id="viewerOverlay">
+          <div class="spinner"></div>
+          <div class="overlay-text" id="overlayText">Connexion...</div>
+        </div>
+        <div class="toolbar" id="toolbar">
+          <span>🖱️ Souris</span>
+          <div class="toolbar-sep"></div>
+          <span>⌨️ Clavier</span>
+          <div class="toolbar-sep"></div>
+          <span><span class="kbd">Esc</span> Libérer</span>
+        </div>
       </div>
     </div>
 

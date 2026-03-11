@@ -1,14 +1,14 @@
-name: Build Agent Windows .exe
+name: Build Windows .exe
 
 on:
   push:
     tags:
-      - 'v*'        # Se déclenche sur : git tag v1.0 && git push --tags
+      - 'v*'
 
 jobs:
   build-windows:
     runs-on: windows-latest
-    name: Build FastFood Agent (.exe)
+    name: Build Agent + Controller (.exe)
     permissions:
       contents: write
 
@@ -21,31 +21,41 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
+      - name: Install Agent dependencies
         working-directory: agent
         run: npm install
 
-      - name: Build .exe
+      - name: Build Agent .exe
         working-directory: agent
         run: npx electron-builder --win --x64 --publish never
 
-      - name: Upload .exe to GitHub Release
+      - name: Install Controller dependencies
+        working-directory: controller
+        run: npm install
+
+      - name: Build Controller .exe
+        working-directory: controller
+        run: npx electron-builder --win --x64 --publish never
+
+      - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "FastFood Agent ${{ github.ref_name }}"
+          name: "FastFood Remote ${{ github.ref_name }}"
           body: |
-            ## FastFood Agent ${{ github.ref_name }}
+            ## FastFood Remote ${{ github.ref_name }}
 
-            ### Installation
-            1. Téléchargez `FastFood-Agent-Setup.exe`
-            2. Lancez l'installateur sur la borne Windows
-            3. L'agent démarrera automatiquement
+            ### Agent (borne Windows)
+            - Téléchargez et lancez `FastFood-Agent*.exe`
+            - L'agent tourne **en arrière-plan** (icône dans la barre système)
+            - Aucun code à communiquer — connexion automatique au serveur
 
-            ### Utilisation
-            - L'agent affiche un **code à 6 chiffres**
-            - Communiquez ce code à l'opérateur
-            - L'opérateur entre le code dans le Controller pour prendre le contrôle
+            ### Controller (opérateur)
+            - Téléchargez et lancez `FastFood-Remote*.exe`
+            - Tous les agents en ligne apparaissent dans la liste
+            - Cliquez sur **Se connecter** pour prendre le contrôle
+            - Multi-sessions : gérez plusieurs bornes simultanément
           files: |
             agent/dist/*.exe
+            controller/dist/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

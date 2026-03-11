@@ -1,51 +1,86 @@
-const { app, BrowserWindow, ipcMain, desktopCapturer, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, desktopCapturer, screen, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
+const os = require('os');
 const InputSimulator = require('./input-simulator');
 
-let mainWindow;
+let hiddenWindow;
+let tray;
 let inputSimulator;
 
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 380,
-    height: 500,
-    resizable: false,
-    frame: false,
-    transparent: false,
-    alwaysOnTop: false,
+// ── Icône tray minimale (16x16 PNG blanc) ──
+const TRAY_ICON_B64 =
+  'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlz' +
+  'AAALEwAACxMBAJqcGAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAABbSURB' +
+  'VDiNY/z//z8DJYCJgUIwasCoAaMGjBowMAAA//8DAFBLAwQUAAAACAAAACEAAAAAAAAAAAAAAAoA' +
+  'AAAAAAAAAA==';
+
+function createTrayIcon() {
+  try {
+    const buf = Buffer.from(TRAY_ICON_B64, 'base64');
+    let img = nativeImage.createFromBuffer(buf);
+    if (img.isEmpty()) img = nativeImage.createEmpty();
+    img.setTemplateImage(true);
+    return img;
+  } catch {
+    return nativeImage.createEmpty();
+  }
+}
+
+function buildTrayMenu(statusText) {
+  return Menu.buildFromTemplate([
+    { label: 'FastFood Agent', enabled: false },
+    { type: 'separator' },
+    { label: `Statut: ${statusText}`, id: 'status', enabled: false },
+    { type: 'separator' },
+    { label: 'Quitter', click: () => app.quit() }
+  ]);
+}
+
+function createTray() {
+  tray = new Tray(createTrayIcon());
+  tray.setToolTip('FastFood Agent');
+  tray.setContextMenu(buildTrayMenu('Démarrage...'));
+}
+
+function createHiddenWindow() {
+  hiddenWindow = new BrowserWindow({
+    width: 400,
+    height: 300,
+    show: false,
+    skipTaskbar: true,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
       webSecurity: false
-    },
-    icon: path.join(__dirname, 'assets', 'icon.ico')
+    }
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  hiddenWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
-  // Ouvrir DevTools en développement
-  if (process.env.NODE_ENV === 'development') {
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
-  }
-
-  mainWindow.on('closed', () => {
-    mainWindow = null;
+  hiddenWindow.on('closed', () => {
+    hiddenWindow = null;
     if (inputSimulator) inputSimulator.destroy();
   });
 }
 
+// ── Masquer du dock macOS ──
+if (process.platform === 'darwin' && app.dock) {
+  app.dock.hide();
+}
+
 app.whenReady().then(() => {
   inputSimulator = new InputSimulator();
-  createWindow();
+  createTray();
+  createHiddenWindow();
 });
 
+// Rester actif même sans fenêtre visible
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  // Ne pas quitter — app de fond
 });
 
-// --- IPC Handlers ---
+// ── IPC ──
 
-// Fournir les sources d'écran au renderer
 ipcMain.handle('get-screen-sources', async () => {
   const sources = await desktopCapturer.getSources({
     types: ['screen'],
@@ -54,7 +89,6 @@ ipcMain.handle('get-screen-sources', async () => {
   return sources.map(s => ({ id: s.id, name: s.name }));
 });
 
-// Fournir les dimensions de l'écran principal
 ipcMain.handle('get-screen-size', () => {
   const primary = screen.getPrimaryDisplay();
   return {
@@ -64,19 +98,18 @@ ipcMain.handle('get-screen-size', () => {
   };
 });
 
-// Exécuter un événement input reçu du controller
+ipcMain.handle('get-hostname', () => os.hostname());
+
 ipcMain.on('execute-input', (_, event) => {
   const primary = screen.getPrimaryDisplay();
   const { width, height } = primary.bounds;
   inputSimulator.handleEvent(event, width, height);
 });
 
-// Fermer l'app depuis le renderer
-ipcMain.on('app-quit', () => {
-  app.quit();
+ipcMain.on('status-update', (_, { text, controllers }) => {
+  if (!tray) return;
+  tray.setToolTip(`FastFood Agent — ${text}`);
+  tray.setContextMenu(buildTrayMenu(text));
 });
 
-// Minimiser depuis le renderer
-ipcMain.on('app-minimize', () => {
-  if (mainWindow) mainWindow.minimize();
-});
+ipcMain.on('app-quit', () => app.quit());
