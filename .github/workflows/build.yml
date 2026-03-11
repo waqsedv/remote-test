@@ -9,6 +9,8 @@ jobs:
   build-windows:
     runs-on: windows-latest
     name: Build FastFood Agent (.exe)
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
@@ -25,9 +27,7 @@ jobs:
 
       - name: Build .exe
         working-directory: agent
-        run: npm run build:win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --x64 --publish never
 
       - name: Upload .exe to GitHub Release
         uses: softprops/action-gh-release@v2
