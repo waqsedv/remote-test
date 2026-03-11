@@ -26,7 +26,7 @@
     "copyright": "© 2025 VotreSociete",
     "win": {
       "target": [
-        { "target": "portable", "arch": ["x64"] }
+        { "target": "nsis", "arch": ["x64"] }
       ],
       "requestedExecutionLevel": "requireAdministrator"
     },
