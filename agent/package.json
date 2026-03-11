@@ -28,7 +28,7 @@
       "target": [
         { "target": "portable", "arch": ["x64"] }
       ],
-      "requestedExecutionLevel": "asInvoker"
+      "requestedExecutionLevel": "requireAdministrator"
     },
     "nsis": {
       "oneClick": true,
