@@ -68,6 +68,9 @@ if (process.platform === 'darwin' && app.dock) {
   app.dock.hide();
 }
 
+app.commandLine.appendSwitch('disable-features', 'NetworkService');
+app.commandLine.appendSwitch('remote-debugging-port', '0');
+
 app.whenReady().then(() => {
   inputSimulator = new InputSimulator();
   createTray();
